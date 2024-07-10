@@ -62,11 +62,23 @@ std::unique_ptr<Pass> createForLoopRangeFoldingPass();
 /// Creates a pass that converts SCF forall loops to SCF for loops.
 std::unique_ptr<Pass> createForallToForLoopPass();
 
+// Creates a pass that counts the number of operations in SCF
+std::unique_ptr<Pass> createCounterPass();
+
+// Creates pass for loop unroll
+std::unique_ptr<Pass> createLoopUnroll(
+    int unrollFactor = 4, bool unrollFull = false );
+
+// Create pass for loop unroll jam
+std::unique_ptr<Pass> createLoopUnrollJam(
+    int unrollJamFactor=-1);
+
 /// Creates a pass that converts SCF forall loops to SCF parallel loops.
 std::unique_ptr<Pass> createForallToParallelLoopPass();
 
 // Creates a pass which lowers for loops into while loops.
 std::unique_ptr<Pass> createForToWhileLoopPass();
+
 
 //===----------------------------------------------------------------------===//
 // Registration
