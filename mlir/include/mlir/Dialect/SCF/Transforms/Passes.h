@@ -73,6 +73,8 @@ std::unique_ptr<Pass> createLoopUnroll(
 std::unique_ptr<Pass> createLoopUnrollJam(
     int unrollJamFactor=-1);
 
+// create pass for loop fusion
+std::unique_ptr<Pass> createLoopFusion();
 /// Creates a pass that converts SCF forall loops to SCF parallel loops.
 std::unique_ptr<Pass> createForallToParallelLoopPass();
 

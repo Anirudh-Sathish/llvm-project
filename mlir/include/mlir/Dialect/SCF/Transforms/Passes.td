@@ -141,6 +141,11 @@ def SCFLoopUnroll : Pass<"scf-loop-unroll">{
   ];
 }
 
+def SCFLoopFusion: Pass<"scf-loop-fusion">{
+  let summary = "Pass to fuse loops at the scf level";
+  let constructor = "mlir::createLoopFusion()";
+}
+
 def SCFLoopUnrollJam : Pass<"scf-loop-unroll-jam">
 {
   let summary= "Unroll and Jam SCF ForOps";
