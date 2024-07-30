@@ -1,0 +1,27 @@
+// RUN: mlir-opt %s -pass-pipeline="builtin.module(func.func(tosa-to-linalg,tosa-to-linalg-named,tosa-to-arith)) " | \
+// RUN: mlir-opt -one-shot-bufferize="bufferize-function-boundaries" -buffer-deallocation-pipeline | \
+// RUN: mlir-opt -pass-pipeline="builtin.module(func.func(convert-linalg-to-affine-loops))" | \
+// RUN: mlir-opt -pass-pipeline="builtin.module(func.func(scf-loop-fusion))" | \
+// RUN: mlir-opt -test-lower-to-llvm | \
+// RUN: mlir-cpu-runner -O3 -e main -entry-point-result=void \
+// RUN:   -shared-libs=%mlir_runner_utils \
+// RUN: | FileCheck %s
+func.func private @printMemrefF32(tensor<*xf32>)
+
+func.func @main() {
+  %a = arith.constant dense<[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]> : tensor<2x3xf32>
+  %b = arith.constant dense<[[6.0, 5.0, 4.0], [3.0, 2.0, 1.0]]> : tensor<2x3xf32>
+  %c = tosa.add %a, %b : (tensor<2x3xf32>, tensor<2x3xf32>) -> tensor<2x3xf32>
+  // Reduce sum
+  %d = tosa.reduce_sum %c {axis = 1 : i32} : (tensor<2x3xf32>) -> tensor<2x1xf32>
+  %d_unranked = tensor.cast %d : tensor<2x1xf32> to tensor<*xf32>
+  call @printMemrefF32(%d_unranked) : (tensor<*xf32>) -> ()
+  return
+}
+
+
+// CHECK: Unranked Memref base@ = {{.*}} rank = 2 offset = 0 sizes = [2, 1] strides = [1, 1] data =
+// CHECK-NEXT: [
+// CHECK-SAME: [21], 
+// CHECK-NEXT:  [21]
+// CHECK-SAME: ] 
