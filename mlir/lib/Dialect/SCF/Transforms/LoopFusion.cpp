@@ -9,6 +9,61 @@
 // Performs producer conumser fusion on SCF ForOp
 // Currently supports 1D , 2D and reduction types
 //
+// Description:
+// This algorithm iterates over the code to identify blocks containing more than
+// two ForOps. For such blocks, it constructs a dependence graph to capture
+// memory dependencies (memref) of the producer-consumer type, specifically
+// Read-After-Write (RAW) dependencies.
+//
+// Steps:
+//
+// 1. Initialization:
+//    a. Iterate over each block to identify SCF ForOps.
+//    b. Construct a dependence graph for the block capturing memory dependencies.
+//
+// 2. Find the maximum loop depth in the block.
+//
+// 3. Loop Fusion (for each depth from 1 to maxDepth):
+//    a. Iterate over each node in the dependence graph:
+//       i.   If the node has outgoing edges:
+//       ii.  For each edge in the node's edge list:
+//            1. Identify the producer and consumer loops (srcForOp and dstForOp).
+//            2. Check feasibility for fusion:
+//               a. Memory bounds compatibility.
+//               b. Loop bounds compatibility.
+//               c. Matching loop depths.
+//               d. Depth matching the current fusion depth.
+//            3. If feasible, fuse the producer loop into the consumer loop.
+//
+// 4. Function: fuseIntoDst (dependencyGraph, srcForOp, dstForOp, fusionDepth):
+//    a. Check memory bounds compatibility.
+//    b. Check if loop bounds are compatible.
+//    c. Ensure both loops have the same depth.
+//    d. Ensure the depth matches the fusion depth.
+//    e. Map the induction variable of src to dst.
+//    f. Clone the src loop body and insert it at the beginning of the dst loop body.
+//
+// 5. Function: checkFeasibility (srcForOp, dstForOp):
+//    a. Compare lower bounds, upper bounds, and steps of srcForOp and dstForOp.
+//    b. Return true if they match, false otherwise.
+//
+// 6. Function: getLoopDepth (op):
+//    a. Compute the depth of the loop containing the operation.
+//
+// 7. Function: getMaxLoopDepth (graph):
+//    a. Compute the maximum loop depth in the dependence graph.
+//
+// 8. Function: fuseLoops (graph):
+//    a. Iterate over all nodes in the graph and perform loop fusion based on the dependence edges.
+//
+// 9. Pass Implementation: LoopFusion:
+//    a. Function: runOnBlock (block):
+//       i.   Initialize the dependence graph for the block.
+//       ii.  Perform loop fusion on the dependence graph.
+//    b. Function: runOnOperation ():
+//       i.   Identify blocks where loop fusion can be applied.
+//       ii.  Apply loop fusion to those blocks.
+//
 //===----------------------------------------------------------------------===//
 
 #include "mlir/Dialect/SCF/Transforms/Passes.h"
@@ -71,7 +126,6 @@ struct DependenceGraph {
   // collects all the stores and loads related to it
   // If there is a nested forOp, the function is visited recursively
   void walk_operation(Operation *op, unsigned id) {
-    LLVM_DEBUG(llvm::dbgs() << "============================= \n");
     op->walk([&](Operation *childOp) {
       if (isa<ForOp>(childOp)) {
         if (childOp != op) {
