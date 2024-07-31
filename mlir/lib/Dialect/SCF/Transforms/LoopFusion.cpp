@@ -19,7 +19,8 @@
 //
 // 1. Initialization:
 //    a. Iterate over each block to identify SCF ForOps.
-//    b. Construct a dependence graph for the block capturing memory dependencies.
+//    b. Construct a dependence graph for the block capturing memory
+//    dependencies.
 //
 // 2. Find the maximum loop depth in the block.
 //
@@ -27,7 +28,8 @@
 //    a. Iterate over each node in the dependence graph:
 //       i.   If the node has outgoing edges:
 //       ii.  For each edge in the node's edge list:
-//            1. Identify the producer and consumer loops (srcForOp and dstForOp).
+//            1. Identify the producer and consumer loops (srcForOp and
+//            dstForOp).
 //            2. Check feasibility for fusion:
 //               a. Memory bounds compatibility.
 //               b. Loop bounds compatibility.
@@ -41,7 +43,8 @@
 //    c. Ensure both loops have the same depth.
 //    d. Ensure the depth matches the fusion depth.
 //    e. Map the induction variable of src to dst.
-//    f. Clone the src loop body and insert it at the beginning of the dst loop body.
+//    f. Clone the src loop body and insert it at the beginning of the dst loop
+//    body.
 //
 // 5. Function: checkFeasibility (srcForOp, dstForOp):
 //    a. Compare lower bounds, upper bounds, and steps of srcForOp and dstForOp.
@@ -54,7 +57,8 @@
 //    a. Compute the maximum loop depth in the dependence graph.
 //
 // 8. Function: fuseLoops (graph):
-//    a. Iterate over all nodes in the graph and perform loop fusion based on the dependence edges.
+//    a. Iterate over all nodes in the graph and perform loop fusion based on
+//    the dependence edges.
 //
 // 9. Pass Implementation: LoopFusion:
 //    a. Function: runOnBlock (block):
@@ -99,14 +103,27 @@ using memref::StoreOp;
 using scf::ForOp;
 #define DEBUG_TYPE "scf-loop-fusion"
 
-// Sturct for the dependence graph to represent memref relationships
-// Currently support for producer consumer dependence(RAW)
+// Struct representing a dependence graph for SCF ForOps
+// The dependence graph is used to capture dependencies between loops
+// based on memory access patterns, allowing for loop fusion optimizations.
 struct DependenceGraph {
+  // Struct representing an edge in the dependence graph
+  // An edge represents a dependency from one ForOp (producer) to another
+  // (consumer). It includes:
+  // - dstId: Identifier of the destination node (consumer ForOp).
+  // - value: Memory reference involved in the dependency.
   struct Edge {
     unsigned dstId;
     Value value;
     Edge(unsigned dstId, Value value) : dstId(dstId), value(value) {}
   };
+  // Struct representing a node in the dependence graph
+  // Each node corresponds to a single ForOp operation and contains:
+  // - id: Unique identifier for the node.
+  // - storeInsts: List of StoreOps within the ForOp.
+  // - loadInsts: List of LoadOps within the ForOp.
+  // - edgeList: List of edges representing dependencies to other nodes.
+  // - op: Pointer to the actual ForOp operation.
   struct Node {
     unsigned id;
     SmallVector<Operation *> storeInsts;
@@ -120,6 +137,9 @@ struct DependenceGraph {
   unsigned nodeId = 0;
   Block &block;
   SmallVector<unsigned> nodeList;
+
+  // Constructor for DependenceGraph
+  // Initializes the graph for a given block.
   DependenceGraph(Block &block) : block(block) {}
 
   // Walks through the given operation(which is of type ForOp) and
@@ -145,7 +165,10 @@ struct DependenceGraph {
     });
   }
 
-  // Initalises the graph
+  // Initializes the dependence graph by:
+  // - Creating nodes for each ForOp found in the block.
+  // - Populating nodes with StoreOps and LoadOps.
+  // - Creating edges between nodes based on memory dependencies (RAW).
   void init() {
     nodeId = 0;
     nodeMap.clear();
