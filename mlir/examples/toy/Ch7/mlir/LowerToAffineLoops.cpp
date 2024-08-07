@@ -25,7 +25,7 @@
 #include "mlir/Support/TypeID.h"
 #include "toy/Dialect.h"
 #include "toy/Passes.h"
-
+#include "llvm/Support/raw_ostream.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -316,6 +316,66 @@ struct TransposeOpLowering : public ConversionPattern {
   }
 };
 
+//===----------------------------------------------------------------------===//
+// ToyToAffine RewritePatterns: Matmul operations
+//===----------------------------------------------------------------------===//
+
+struct MatmulOpLowering : public ConversionPattern {
+  MatmulOpLowering(MLIRContext *ctx)
+      : ConversionPattern(toy::MatmulOp::getOperationName(), 1, ctx) {}
+
+  LogicalResult
+  matchAndRewrite(Operation *op, ArrayRef<Value> operands,
+                  ConversionPatternRewriter &rewriter) const final {
+    auto loc = op->getLoc();
+    toy::MatmulOpAdaptor matmulAdaptor(operands);
+    Value lhs = matmulAdaptor.getLhs();
+    Value rhs = matmulAdaptor.getRhs();
+
+    auto lhsType = dyn_cast<MemRefType>(lhs.getType());
+    auto rhsType = dyn_cast<MemRefType>(rhs.getType());
+    if (!lhsType || !rhsType) return failure();
+
+    int64_t M = lhsType.getShape()[0];
+    int64_t N = rhsType.getShape()[1];
+    int64_t K = lhsType.getShape()[1];
+    auto elementType = lhsType.getElementType();
+    auto resultType = MemRefType::get({M, N}, elementType);
+    Value result = rewriter.create<memref::AllocOp>(loc, resultType);
+
+    rewriter.setInsertionPoint(op);
+    Value zero = rewriter.create<arith::ConstantOp>(op->getLoc(), rewriter.getF64FloatAttr(0.0));
+
+    auto outerLoop = rewriter.create<affine::AffineForOp>(op->getLoc(), 0, M, 1);
+    rewriter.setInsertionPointToStart(outerLoop.getBody());
+    Value i = outerLoop.getInductionVar();
+
+    auto middleLoop = rewriter.create<affine::AffineForOp>(op->getLoc(),0,N,1);
+    rewriter.setInsertionPointToStart(middleLoop.getBody());
+    Value j = middleLoop.getInductionVar();
+
+    rewriter.create<affine::AffineStoreOp>(op->getLoc(),zero,result,ValueRange{i,j});
+    Value sum = zero;
+    Value total_sum = zero;
+
+    auto innerLoop = rewriter.create<affine::AffineForOp>(op->getLoc(),0,K,1);
+    rewriter.setInsertionPointToStart(innerLoop.getBody());
+    Value k = innerLoop.getInductionVar();
+
+    Value lhsValue = rewriter.create<affine::AffineLoadOp>(op->getLoc(),lhs,ValueRange{i,k});
+    Value rhsValue = rewriter.create<affine::AffineLoadOp>(op->getLoc(),rhs,ValueRange{k,j});
+    Value product = rewriter.create<arith::MulFOp>(op->getLoc(),lhsValue,rhsValue);
+    sum = rewriter.create<arith::AddFOp>(op->getLoc(),sum,product);
+    Value currentValue = rewriter.create<affine::AffineLoadOp>(op->getLoc(), result, ValueRange{i, j});
+    total_sum = rewriter.create<arith::AddFOp>(op->getLoc(),sum,currentValue);
+    rewriter.setInsertionPoint(innerLoop.getBody()->getTerminator());
+    rewriter.create<affine::AffineStoreOp>(op->getLoc(),total_sum,result,ValueRange{i,j});
+
+    rewriter.replaceOp(op, result);
+    return success();
+  }
+};
+
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -366,7 +426,7 @@ void ToyToAffineLoweringPass::runOnOperation() {
   // the set of patterns that will lower the Toy operations.
   RewritePatternSet patterns(&getContext());
   patterns.add<AddOpLowering, ConstantOpLowering, FuncOpLowering, MulOpLowering,
-               PrintOpLowering, ReturnOpLowering, TransposeOpLowering>(
+               PrintOpLowering, ReturnOpLowering, TransposeOpLowering, MatmulOpLowering>(
       &getContext());
 
   // With the target and rewrite patterns defined, we can now attempt the
